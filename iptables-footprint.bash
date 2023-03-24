@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /bin/bash -e
 # CLEAR=1 ./iptables-footprint.bash icmp and dst host 10.1.1.1
 
 function foreach_chain() {
@@ -8,7 +8,7 @@ function foreach_chain() {
             table=${table##\*}
             for chain in $($iptables-save -t $table | awk '$1 ~ /^:/ {print $1}'); do
                 chain=${chain##:}
-                count=$($iptables-save -t $table | grep -c -- "-A $chain")
+                count=$($iptables-save -t $table | grep -c -- "-A $chain\s" || true)
                 [[ "$count" == 0 ]] && continue
                 $action $iptables $table $chain $count
             done
@@ -23,7 +23,7 @@ function clear_log() {
     while IFS= read -r line; do
         echo "$iptables -t $table -D ${line#* }"
         eval "$iptables -t $table -D ${line#* }"
-    done < <($iptables-save -t $table | grep -- "-A $chain.*-j LOG ")
+    done < <($iptables-save -t $table | grep -- "-A $chain\s.*-j LOG ")
 }
 
 if [[ "$CLEAR" == 1 ]]; then
@@ -31,11 +31,7 @@ if [[ "$CLEAR" == 1 ]]; then
     exit 0
 fi
 
-bpf_bytecode=$(while IFS= read -r line; do
-    [[ "$need_comma" == 1 ]] && echo -n ","
-    echo -n "$line"
-    need_comma=1
-done < <(tcpdump -ddd $@))
+bpf_bytecode=$(nfbpf_compile RAW "$@")
 
 function insert_log() {
     iptables=$1
