@@ -1,6 +1,8 @@
 #! /bin/bash -e
 # CLEAR=1 ./iptables-footprint.bash icmp and dst host 10.1.1.1
 
+bpf_bytecode=$(nfbpf_compile RAW "$@")
+
 function foreach_chain() {
     action=$1
     for iptables in iptables ip6tables; do
@@ -20,10 +22,17 @@ function clear_log() {
     iptables=$1
     table=$2
     chain=$3
+    declare -A rules
+    idx=0
     while IFS= read -r line; do
-        echo "$iptables -t $table -D ${line#* }"
-        eval "$iptables -t $table -D ${line#* }"
-    done < <($iptables-save -t $table | grep -- "-A $chain\s.*-j LOG ")
+        idx=$((idx+1))
+        rules["$line"]="$idx"
+    done < <($iptables-save -t $table | grep -- "-A $chain\s")
+    while IFS= read -r line; do
+        echo $iptables -t $table -D $chain ${rules["$line"]}
+        # ignore "Index of deletion too big" due to duplicated rules
+        $iptables -t $table -D $chain ${rules["$line"]} || true
+    done < <($iptables-save -t $table | tac | grep -- "-A $chain\s.*$bpf_bytecode")
 }
 
 if [[ "$CLEAR" == 1 ]]; then
@@ -31,17 +40,19 @@ if [[ "$CLEAR" == 1 ]]; then
     exit 0
 fi
 
-bpf_bytecode=$(nfbpf_compile RAW "$@")
-
 function insert_log() {
     iptables=$1
     table=$2
     chain=$3
     count=$4
-    for i in $(seq 1 $count); do
-        echo $iptables -t $table -I $chain $((i*2-1)) -m bpf --bytecode "$bpf_bytecode" -j LOG --log-prefix "${iptables:0:3}/$table/$chain/$i: "
-        $iptables -t $table -I $chain $((i*2-1)) -m bpf --bytecode "$bpf_bytecode" -j LOG --log-prefix "${iptables:0:3}/$table/$chain/$i: "
-    done
+
+    idx=1
+    while IFS= read -r line; do
+        line=${line#-A $chain }
+        echo $iptables -t $table -I $chain $((idx*2-1)) -m bpf --bytecode \"$bpf_bytecode\" $line
+        eval $iptables -t $table -I $chain $((idx*2-1)) -m bpf --bytecode \"$bpf_bytecode\" $line
+        idx=$((idx+1))
+    done < <($iptables-save -t $table | grep -- "^-A $chain\s")
 }
 
 foreach_chain insert_log
