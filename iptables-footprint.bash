@@ -23,7 +23,7 @@ function clear_log() {
     while IFS= read -r line; do
         echo "$iptables -t $table -D ${line#* }"
         eval "$iptables -t $table -D ${line#* }"
-    done < <($iptables-save -t $table | grep -- "-A $chain.*-j LOG.*footprint")
+    done < <($iptables-save -t $table | grep -- "-A $chain.*-j LOG ")
 }
 
 if [[ "$CLEAR" == 1 ]]; then
@@ -43,8 +43,8 @@ function insert_log() {
     chain=$3
     count=$4
     for i in $(seq 1 $count); do
-        echo $iptables -t $table -I $chain $((i*2-1)) -m bpf --bytecode "$bpf_bytecode" -j LOG --log-prefix "footprint:$iptables/$table/$chain/$i: "
-        $iptables -t $table -I $chain $((i*2-1)) -m bpf --bytecode "$bpf_bytecode" -j LOG --log-prefix "footprint:$iptables/$table/$chain/$i: "
+        echo $iptables -t $table -I $chain $((i*2-1)) -m bpf --bytecode "$bpf_bytecode" -j LOG --log-prefix "${iptables:0:3}/$table/$chain/$i: "
+        $iptables -t $table -I $chain $((i*2-1)) -m bpf --bytecode "$bpf_bytecode" -j LOG --log-prefix "${iptables:0:3}/$table/$chain/$i: "
     done
 }
 
