@@ -26,12 +26,18 @@ function clear_log() {
     idx=0
     while IFS= read -r line; do
         idx=$((idx+1))
-        rules["$line"]="$idx"
+        if [[ -z ${rules["$line"]} ]]; then
+            rules["$line"]="$idx"
+        else
+            rules["$line"]="$idx,${rules["$line"]}"
+        fi
     done < <($iptables-save -t $table | grep -- "-A $chain\s")
     while IFS= read -r line; do
-        echo $iptables -t $table -D $chain ${rules["$line"]}
-        # ignore "Index of deletion too big" due to duplicated rules
-        $iptables -t $table -D $chain ${rules["$line"]} || true
+        for rule in ${rules["$line"]//,/ }; do
+            echo $iptables -t $table -D $chain $rule
+            $iptables -t $table -D $chain $rule
+        done
+        rules["$line"]=""
     done < <($iptables-save -t $table | tac | grep -- "-A $chain\s.*$bpf_bytecode")
 }
 
