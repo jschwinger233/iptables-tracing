@@ -1,5 +1,6 @@
 #! /bin/bash -e
 # iptables-footprint.bash icmp and dst host 10.1.1.1
+# we may want to run "sysctl -w net.netfilter.nf_log_all_netns=1" to log all namespaces
 
 bpf_bytecode=$(eval "nfbpf_compile RAW '$@'")
 
@@ -22,6 +23,7 @@ function clear_log() {
     iptables=$1
     table=$2
     chain=$3
+
     declare -A rules
     idx=0
     while IFS= read -r line; do
@@ -32,6 +34,7 @@ function clear_log() {
             rules["$line"]="$idx,${rules["$line"]}"
         fi
     done < <($iptables-save -t $table | grep -- "-A $chain\s")
+
     while IFS= read -r line; do
         for idx in ${rules["$line"]//,/ }; do
             echo $iptables -t $table -D $chain $idx
@@ -50,8 +53,9 @@ function insert_log() {
     idx=1
     while IFS= read -r line; do
         line=${line#-A $chain }
-        echo $iptables -t $table -I $chain $((idx*2-1)) -m bpf --bytecode \"$bpf_bytecode\" $line
-        eval $iptables -t $table -I $chain $((idx*2-1)) -m bpf --bytecode \"$bpf_bytecode\" $line
+        insert_idx=$((idx*2-1))
+        echo $iptables -t $table -I $chain $insert_idx -m bpf --bytecode \"$bpf_bytecode\" ${line%%-j*} -j LOG --log-prefix "$iptables/$table/$chain/$insert_idx:"
+        eval $iptables -t $table -I $chain $insert_idx -m bpf --bytecode \"$bpf_bytecode\" ${line%%-j*} -j LOG --log-prefix "$iptables/$table/$chain/$insert_idx:"
         ((idx++))
     done < <($iptables-save -t $table | grep -- "^-A $chain\s")
 }
@@ -65,4 +69,11 @@ function on_exit() {
 trap on_exit SIGINT
 
 echo "tail -f /var/log/syslog"
-tail -f /var/log/syslog
+while read line; do
+    hit=$(echo $line | grep -Po '\S+/\S+/\S+/\S+(?=:)' || true)
+    [[ -z "$hit" ]] && continue
+    IFS=/ read iptables table chain idx <<<"$hit"
+    rule=$($iptables -t $table -L $chain $((idx+1)) | tr -s ' ')
+    skb=$(echo $line | grep -Po '(?<=:)IN=.*')
+    echo "$rule hit by $skb"
+done < <(tail -f /var/log/syslog) || true
