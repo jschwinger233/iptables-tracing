@@ -1,7 +1,7 @@
 #! /bin/bash -e
-# CLEAR=1 ./iptables-footprint.bash icmp and dst host 10.1.1.1
+# iptables-footprint.bash icmp and dst host 10.1.1.1
 
-bpf_bytecode=$(nfbpf_compile RAW "$@")
+bpf_bytecode=$(eval "nfbpf_compile RAW '$@'")
 
 function foreach_chain() {
     action=$1
@@ -33,18 +33,13 @@ function clear_log() {
         fi
     done < <($iptables-save -t $table | grep -- "-A $chain\s")
     while IFS= read -r line; do
-        for rule in ${rules["$line"]//,/ }; do
-            echo $iptables -t $table -D $chain $rule
-            $iptables -t $table -D $chain $rule
+        for idx in ${rules["$line"]//,/ }; do
+            echo $iptables -t $table -D $chain $idx
+            $iptables -t $table -D $chain $idx
         done
         rules["$line"]=""
     done < <($iptables-save -t $table | tac | grep -- "-A $chain\s.*$bpf_bytecode")
 }
-
-if [[ "$CLEAR" == 1 ]]; then
-    foreach_chain clear_log
-    exit 0
-fi
 
 function insert_log() {
     iptables=$1
@@ -57,8 +52,17 @@ function insert_log() {
         line=${line#-A $chain }
         echo $iptables -t $table -I $chain $((idx*2-1)) -m bpf --bytecode \"$bpf_bytecode\" $line
         eval $iptables -t $table -I $chain $((idx*2-1)) -m bpf --bytecode \"$bpf_bytecode\" $line
-        idx=$((idx+1))
+        ((idx++))
     done < <($iptables-save -t $table | grep -- "^-A $chain\s")
 }
 
 foreach_chain insert_log
+
+function on_exit() {
+    echo "Clearing log rules"
+    foreach_chain clear_log
+}
+trap on_exit SIGINT
+
+echo "tail -f /var/log/syslog"
+tail -f /var/log/syslog
