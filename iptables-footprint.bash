@@ -2,6 +2,9 @@
 # IPV6=1 iptables-footprint.bash icmp and dst host 10.1.1.1
 # we may want to run "sysctl -w net.netfilter.nf_log_all_netns=1" to log all namespaces
 
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
 export iptables=iptables
 if [[ -n "$IPV6" ]]; then
     export iptables=ip6tables
@@ -80,5 +83,5 @@ while read line; do
     chain=$($iptables-save -t $table | grep -Po "(?<=-A )$chain\S*" | sort -u)
     rule=$($iptables -t $table -L $chain $((idx+1)) | tr -s ' ')
     skb=$(echo $line | grep -Po 'IN=.*')
-    echo "$rule hit by $skb"
+    echo -e "${RED}$rule${NC} hit by $skb"
 done < <(tail -f /var/log/syslog) || true
