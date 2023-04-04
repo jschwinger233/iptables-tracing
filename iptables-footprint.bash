@@ -1,14 +1,20 @@
 #! /bin/bash -e
-# IPV6=1 iptables-footprint.bash icmp and dst host 10.1.1.1
+# LOCK=/run/xtables.lock IPV6=1 iptables-footprint.bash icmp and dst host 10.1.1.1
 # we may want to run "sysctl -w net.netfilter.nf_log_all_netns=1" to log all namespaces
 
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-export iptables=iptables
-if [[ -n "$IPV6" ]]; then
-    export iptables=ip6tables
+if [[ -z "$LOCK" ]]; then
+    LOCK=/run/xtables.lock
 fi
+exec 4<>$LOCK
+
+iptables=iptables
+if [[ -n "$IPV6" ]]; then
+    iptables=ip6tables
+fi
+export iptables
 
 bpf_bytecode=$(eval "nfbpf_compile RAW '$@'")
 
@@ -66,13 +72,16 @@ function insert_log() {
     done < <($iptables-save -t $table | grep -- "^-A $chain\s")
 }
 
-foreach_chain insert_log
 
 function on_exit() {
     echo "Clearing log rules"
     foreach_chain clear_log
+    flock -u 4
 }
-trap on_exit SIGINT
+trap on_exit EXIT
+
+flock -x 4
+foreach_chain insert_log
 
 echo "tail -f /var/log/syslog"
 while read line; do
