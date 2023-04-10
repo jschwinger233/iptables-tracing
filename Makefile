@@ -1,14 +1,12 @@
-.PHONY: install
+.PHONY: build install
 
 INSTALL_DIR := /usr/local/bin
 
-EXECUTABLE_IPV4 := iptables-tracing
-EXECUTABLE_IPV6 := ip6tables-tracing
-
-SOURCE_PATH := iptables-tracing
-DESTINATION_IPV4 := $(INSTALL_DIR)/$(EXECUTABLE_IPV4)
-DESTINATION_IPV6 := $(INSTALL_DIR)/$(EXECUTABLE_IPV6)
+build:
+	curl https://git.netfilter.org/iptables/plain/utils/nfbpf_compile.c -OL
+	gcc -I/usr/include/pcap nfbpf_compile.c -lpcap -o nfbpf_compile
 
 install:
-	cp $(SOURCE_PATH) $(DESTINATION_IPV4)
-	cp $(SOURCE_PATH) $(DESTINATION_IPV6)
+	cp nfbpf_compile $(INSTALL_DIR)/
+	cp iptables-tracing $(INSTALL_DIR)/iptables-tracing
+	cp iptables-tracing $(INSTALL_DIR)/ip6tables-tracing
