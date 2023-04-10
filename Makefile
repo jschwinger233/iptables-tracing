@@ -7,6 +7,7 @@ build:
 	gcc -I/usr/include/pcap nfbpf_compile.c -lpcap -o nfbpf_compile
 
 install:
+	chmod +x iptables-tracing
 	cp nfbpf_compile $(INSTALL_DIR)/
 	cp iptables-tracing $(INSTALL_DIR)/iptables-tracing
 	cp iptables-tracing $(INSTALL_DIR)/ip6tables-tracing
