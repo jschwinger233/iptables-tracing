@@ -13,10 +13,7 @@ fi
 exec 4<>$LOCK
 echo -e "${GREEN}Use flock: ${LOCK}${NC}"
 
-iptables=iptables
-if [[ "$0" == *ip6tables* ]]; then
-    iptables=ip6tables
-fi
+iptables="${0%-tracing}"
 export iptables
 
 bpf_bytecode=$(eval "nfbpf_compile RAW '$@'")

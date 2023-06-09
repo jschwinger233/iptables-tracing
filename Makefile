@@ -11,3 +11,5 @@ install:
 	cp nfbpf_compile $(INSTALL_DIR)/
 	cp iptables-tracing $(INSTALL_DIR)/iptables-tracing
 	cp iptables-tracing $(INSTALL_DIR)/ip6tables-tracing
+	cp iptables-tracing $(INSTALL_DIR)/iptables-legacy-tracing
+	cp iptables-tracing $(INSTALL_DIR)/ip6tables-legacy-tracing
