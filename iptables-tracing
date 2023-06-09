@@ -13,7 +13,7 @@ fi
 exec 4<>$LOCK
 echo -e "${GREEN}Use flock: ${LOCK}${NC}"
 
-iptables="${tracing%-tracing}"
+iptables="${0%-tracing}"
 export iptables
 
 bpf_bytecode=$(eval "nfbpf_compile RAW '$@'")
