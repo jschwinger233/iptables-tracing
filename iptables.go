@@ -7,6 +7,7 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -25,9 +26,11 @@ type TableContent struct {
 type Iptables map[Table]TableContent
 
 var ruleRegex *regexp.Regexp
+var logRegex *regexp.Regexp
 
 func init() {
 	ruleRegex = regexp.MustCompile(`[^\s"]+|"[^"]*"`)
+	logRegex = regexp.MustCompile(`(\d+)/([^/]+)/(\w+?)IN=(\w*)`)
 }
 
 func iptablesSave() (iptables Iptables, err error) {
@@ -40,6 +43,7 @@ func iptablesSave() (iptables Iptables, err error) {
 		return nil, fmt.Errorf("%+v: %s", err, stderr.String())
 	}
 
+	fmt.Println(RED+stderr.String(), NC)
 	return newIptables(stdout.String()), nil
 }
 
@@ -159,4 +163,74 @@ func (iptables Iptables) Save() string {
 		lines = append(lines, "COMMIT\n")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (iptables Iptables) Fprint(line string, rawOutput bool) {
+	if !logRegex.MatchString(line) {
+		return
+	}
+	var idx, table, chain, in string
+	parts := strings.Split(line, " ")
+	for i, part := range parts {
+		if logRegex.MatchString(part) {
+			matches := logRegex.FindStringSubmatch(part)
+			idx, table, chain, in = matches[1], matches[2], matches[3], matches[4]
+			parts = parts[i:]
+			break
+		}
+	}
+
+	if in == "" {
+		in = "?"
+	}
+	sip, sport, dip, dport, proto, out, mark := "?", "?", "?", "?", "?", "?", "?"
+	has_mac := false
+	for _, part := range parts {
+		pair := strings.Split(part, "=")
+		if len(pair) < 2 || pair[1] == "" {
+			continue
+		}
+		switch pair[0] {
+		case "SRC":
+			sip = pair[1]
+		case "DST":
+			dip = pair[1]
+		case "PROTO":
+			proto = pair[1]
+		case "SPT":
+			sport = pair[1]
+		case "DPT":
+			dport = pair[1]
+		case "OUT":
+			out = pair[1]
+		case "MARK":
+			mark = pair[1]
+		case "MAC":
+			has_mac = true
+		}
+	}
+
+	// match chain name might be truncated, find full name
+	for _, c := range iptables[table].ChainOrder {
+		if strings.HasPrefix(c, chain) {
+			chain = c
+			break
+		}
+	}
+
+	chainIdx, err := strconv.Atoi(idx)
+	if err != nil {
+		fmt.Printf("Error parsing chain index %s: %v\n", idx, err)
+		return
+	}
+
+	fmt.Printf("%s %s:%s@%s -> %s:%s@%s mark:%s mac:%v %s-t %s -A %s %s%s\n",
+		proto, sip, sport, in, dip, dport, out, mark, has_mac,
+		RED,
+		table, chain, iptables[table].ChainRules[chain][chainIdx],
+		NC,
+	)
+	if rawOutput {
+		fmt.Printf("  (%s)\n", line)
+	}
 }
