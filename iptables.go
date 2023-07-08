@@ -210,7 +210,7 @@ func (iptables Iptables) Fprint(line string, rawOutput bool) {
 		}
 	}
 
-	// match chain name might be truncated, find full name
+	// matched chain name might be truncated, find full name
 	for _, c := range iptables[table].ChainOrder {
 		if strings.HasPrefix(c, chain) {
 			chain = c

@@ -8,13 +8,17 @@ import (
 	"syscall"
 
 	flag "github.com/spf13/pflag"
+	"github.com/vishvananda/netns"
 )
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang iptablesSnoop snoop.c -- -I./headers
+
 type Config struct {
-	filter    string
-	bin       string
-	logPath   string
-	rawOutput bool
+	filter           string
+	bin              string
+	logPath          string
+	rawOutput        bool
+	warnModification bool
 }
 
 var config Config
@@ -31,6 +35,7 @@ func init() {
 	flag.StringVarP(&config.bin, "bin", "b", "iptables", "iptables binary name; e.g. specify `ip6tables` for IPv6 tracing, or `iptables-lagecy` for legacy variant")
 	flag.StringVarP(&config.logPath, "log", "l", "/var/log/syslog", "path to iptables log file")
 	flag.BoolVarP(&config.rawOutput, "raw", "r", false, "output raw syslog lines")
+	flag.BoolVarP(&config.warnModification, "warn-modification", "w", false, "warn if iptables is modified")
 	flag.Parse()
 	config.filter = strings.Join(flag.Args(), " ")
 }
@@ -65,6 +70,21 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if config.warnModification {
+		ns, err := netns.Get()
+		if err != nil {
+			fmt.Printf("Error getting current netns: %v\n", err)
+			return
+		}
+		go func() {
+			err := iptablesSnoop(ctx, ns)
+			if err != nil {
+				fmt.Printf("Error snooping iptables: %v\n", err)
+				return
+			}
+		}()
+	}
+
 	lines, err := monitorLog(ctx, config.logPath)
 	if err != nil {
 		fmt.Printf("Error monitoring %s: %v\n", config.logPath, err)
@@ -74,7 +94,4 @@ func main() {
 	for line := range lines {
 		originalIptables.Fprint(line, config.rawOutput)
 	}
-
-	// one more thing is to monitor the iptables modification events and give a warning
-	// task -> netns, has to be the same
 }
