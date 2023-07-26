@@ -39,14 +39,14 @@ func iptablesSnoop(ctx context.Context, netns netns.NsHandle) (err error) {
 		return
 	}
 
-	kp, err := link.Tracepoint("syscalls", "sys_enter_execve", objs.SysEnterExecve, nil)
+	kp, err := link.Kprobe("sys_execve", objs.SysExecve, nil)
 	if err != nil {
 		return
 	}
 	defer kp.Close()
 
 	for {
-		event := iptablesSnoopEventT{}
+		event := iptablesSnoopEvent{}
 		for {
 			if err := objs.Events.LookupAndDelete(nil, &event); err == nil {
 				break
@@ -58,10 +58,11 @@ func iptablesSnoop(ctx context.Context, netns netns.NsHandle) (err error) {
 				continue
 			}
 		}
-		filename := string(event.Filename[:])
-		if strings.Contains(filename, "iptables") || strings.Contains(filename, "ip6tables") {
-			fmt.Printf("Warning: iptables might be modified by %s(%d)\n", filename, event.Pid)
+		cmd := []string{}
+		for _, arg := range event.Args {
+			cmd = append(cmd, string(arg[:]))
 		}
+		fmt.Printf("Warning: iptables might be modified by %d(%s)\n", event.Pid, strings.Trim(strings.Join(cmd, " "), string([]byte{0, ' '})))
 	}
 	return
 }
