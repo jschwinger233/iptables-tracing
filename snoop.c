@@ -5,11 +5,13 @@
 #include "bpf_core_read.h"
 #include "bpf_tracing.h"
 
-struct config_t {
+struct config {
 	u32 netns;
+	u8 block;
+	u8 _pads[3];
 };
 
-static volatile const struct config_t CONFIG = {};
+static volatile const struct config CONFIG = {};
 
 struct event {
 	u32 pid;
@@ -54,9 +56,11 @@ int sys_execve(struct pt_regs *ctx)
 	}
 
 	if (_memcmp((char *)e.args[0], "iptables", 8)
-	    && _memcmp((char *)e.args[0], "ip6tables", 9)) {
+	    && _memcmp((char *)e.args[0], "ip6tables", 9))
 		return 0;
-	}
+
+	if (CONFIG.block)
+		bpf_override_return(ctx, -1);
 
 	bpf_map_push_elem(&events, &e, BPF_EXIST);
 	return 0;

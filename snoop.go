@@ -13,6 +13,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type bpfConfig struct {
+	netns uint32
+	block uint8
+	pads  [3]uint8
+}
+
 func iptablesSnoop(ctx context.Context, netns netns.NsHandle) (err error) {
 	spec, err := loadIptablesSnoop()
 	if err != nil {
@@ -23,8 +29,16 @@ func iptablesSnoop(ctx context.Context, netns netns.NsHandle) (err error) {
 	if err = unix.Fstat(int(netns), &s); err != nil {
 		return
 	}
+
+	block := uint8(0)
+	if config.blockModification {
+		block = 1
+	}
 	consts := map[string]interface{}{
-		"CONFIG": uint32(s.Ino),
+		"CONFIG": bpfConfig{
+			netns: uint32(s.Ino),
+			block: block,
+		},
 	}
 	if err = spec.RewriteConstants(consts); err != nil {
 		return
@@ -62,7 +76,11 @@ func iptablesSnoop(ctx context.Context, netns netns.NsHandle) (err error) {
 		for _, arg := range event.Args {
 			cmd = append(cmd, string(arg[:]))
 		}
-		fmt.Printf("Warning: iptables might be modified by %d(%s)\n", event.Pid, strings.Trim(strings.Join(cmd, " "), string([]byte{0, ' '})))
+		if config.blockModification {
+			fmt.Printf(RED+"Warning: iptables operation was blocked: %d(%s)\n"+NC, event.Pid, strings.Trim(strings.Join(cmd, " "), string([]byte{0, ' '})))
+		} else {
+			fmt.Printf(RED+"Warning: iptables might be modified by %d(%s)\n"+NC, event.Pid, strings.Trim(strings.Join(cmd, " "), string([]byte{0, ' '})))
+		}
 	}
 	return
 }
