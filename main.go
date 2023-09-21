@@ -10,15 +10,13 @@ import (
 
 	"github.com/cilium/ebpf/rlimit"
 	flag "github.com/spf13/pflag"
-	"github.com/vishvananda/netns"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -target native iptablesSnoop snoop.c -- -I./headers
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -target native bpf bpf.c -- -I./headers
 
 type Config struct {
 	filter            string
 	bin               string
-	logPath           string
 	rawOutput         bool
 	warnModification  bool
 	blockModification bool
@@ -36,11 +34,9 @@ func init() {
 		log.Fatal(err)
 	}
 
-	fmt.Println(RED + "# Warning: running this tool inside a container is likely to output nothing because it's supposed to read iptables logs from host" + NC)
 	fmt.Println(RED + "# Warning: run \"sysctl -w net.netfilter.nf_log_all_netns=1\" to enable iptables logging for containers" + NC)
 
 	flag.StringVarP(&config.bin, "bin", "b", "iptables", "iptables binary name; e.g. specify `ip6tables` for IPv6 tracing, or `iptables-lagecy` for legacy variant")
-	flag.StringVarP(&config.logPath, "log", "l", "/var/log/syslog", "path to iptables log file")
 	flag.BoolVarP(&config.rawOutput, "raw", "r", false, "output raw syslog lines")
 	flag.BoolVarP(&config.warnModification, "warn-modification", "w", false, "warn if iptables is modified")
 	flag.BoolVarP(&config.blockModification, "block-modification", "B", false, "block iptables modification")
@@ -75,17 +71,18 @@ func main() {
 		return
 	}
 
+	objs, err := setupBpfObjects()
+	if err != nil {
+		fmt.Printf("Error setting up BPF objects: %v\n", err)
+		return
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	if config.warnModification || config.blockModification {
-		ns, err := netns.Get()
-		if err != nil {
-			fmt.Printf("Error getting current netns: %v\n", err)
-			return
-		}
 		go func() {
-			err := iptablesSnoop(ctx, ns)
+			err := iptablesSnoop(ctx, objs)
 			if err != nil {
 				fmt.Printf("Error snooping iptables: %v\n", err)
 				return
@@ -93,12 +90,13 @@ func main() {
 		}()
 	}
 
-	lines, err := monitorLog(ctx, config.logPath)
+	lines, err := monitorLog(ctx, objs)
 	if err != nil {
-		fmt.Printf("Error monitoring %s: %v\n", config.logPath, err)
+		fmt.Printf("Error monitoring %s: %v\n", err)
 		return
 	}
 
+	fmt.Printf("Start tracing\n")
 	for line := range lines {
 		originalIptables.Fprint(line, config.rawOutput)
 	}

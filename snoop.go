@@ -2,15 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
-	"github.com/vishvananda/netns"
-	"golang.org/x/sys/unix"
 )
 
 type bpfConfig struct {
@@ -19,40 +15,7 @@ type bpfConfig struct {
 	pads  [3]uint8
 }
 
-func iptablesSnoop(ctx context.Context, netns netns.NsHandle) (err error) {
-	spec, err := loadIptablesSnoop()
-	if err != nil {
-		return
-	}
-
-	var s unix.Stat_t
-	if err = unix.Fstat(int(netns), &s); err != nil {
-		return
-	}
-
-	block := uint8(0)
-	if config.blockModification {
-		block = 1
-	}
-	consts := map[string]interface{}{
-		"CONFIG": bpfConfig{
-			netns: uint32(s.Ino),
-			block: block,
-		},
-	}
-	if err = spec.RewriteConstants(consts); err != nil {
-		return
-	}
-
-	objs := &iptablesSnoopObjects{}
-	if err = spec.LoadAndAssign(objs, nil); err != nil {
-		var ve *ebpf.VerifierError
-		if errors.As(err, &ve) {
-			err = fmt.Errorf("%+v: %+v\n", err, ve)
-		}
-		return
-	}
-
+func iptablesSnoop(ctx context.Context, objs *bpfObjects) (err error) {
 	kp, err := link.Kprobe("sys_execve", objs.SysExecve, nil)
 	if err != nil {
 		return
@@ -60,9 +23,9 @@ func iptablesSnoop(ctx context.Context, netns netns.NsHandle) (err error) {
 	defer kp.Close()
 
 	for {
-		event := iptablesSnoopEvent{}
+		event := bpfExecEvent{}
 		for {
-			if err := objs.Events.LookupAndDelete(nil, &event); err == nil {
+			if err := objs.ExecEvents.LookupAndDelete(nil, &event); err == nil {
 				break
 			}
 			select {

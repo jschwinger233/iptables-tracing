@@ -5,6 +5,8 @@
 #include "bpf_core_read.h"
 #include "bpf_tracing.h"
 
+char __license[] SEC("license") = "Dual MIT/GPL";
+
 struct config {
 	u32 netns;
 	u8 block;
@@ -13,7 +15,7 @@ struct config {
 
 static volatile const struct config CONFIG = {};
 
-struct event {
+struct exec_event {
 	u32 pid;
 	unsigned char args[16][16];
 };
@@ -21,9 +23,19 @@ struct event {
 #define MAX_QUEUE_ENTRIES 10000
 struct {
 	__uint(type, BPF_MAP_TYPE_QUEUE);
-	__type(value, struct event);
+	__type(value, struct exec_event);
 	__uint(max_entries, MAX_QUEUE_ENTRIES);
-} events SEC(".maps");
+} exec_events SEC(".maps");
+
+struct nf_log_event {
+	unsigned char buf[256];
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_QUEUE);
+	__type(value, struct nf_log_event);
+	__uint(max_entries, MAX_QUEUE_ENTRIES);
+} nf_log_events SEC(".maps");
 
 inline int _memcmp(char *a, char *b, int len)
 {
@@ -45,7 +57,7 @@ int sys_execve(struct pt_regs *ctx)
 	if (ns.inum != CONFIG.netns)
 		return 0;
 
-	struct event e = {};
+	struct exec_event e = {};
 	e.pid = bpf_get_current_pid_tgid() >> 32;
 
 	char **argv = (char **)BPF_CORE_READ(__ctx, si);
@@ -62,8 +74,16 @@ int sys_execve(struct pt_regs *ctx)
 	if (CONFIG.block)
 		bpf_override_return(ctx, -1);
 
-	bpf_map_push_elem(&events, &e, BPF_EXIST);
+	bpf_map_push_elem(&exec_events, &e, BPF_EXIST);
 	return 0;
 }
 
-char __license[] SEC("license") = "Dual MIT/GPL";
+SEC("kprobe/nf_log_buf_close")
+int nf_log_buf_close(struct pt_regs *ctx)
+{
+	struct nf_log_buf *m = (struct nf_log_buf *)ctx->di;
+	struct nf_log_event e = {};
+	BPF_CORE_READ_STR_INTO(&e.buf, m, buf);
+	bpf_map_push_elem(&nf_log_events, &e, BPF_EXIST);
+	return 0;
+}

@@ -11,6 +11,10 @@ import (
 	"fmt"
 	"strings"
 	"unsafe"
+
+	"github.com/cilium/ebpf"
+	"github.com/vishvananda/netns"
+	"golang.org/x/sys/unix"
 )
 
 type pcapBpfProgram C.struct_bpf_program
@@ -47,4 +51,46 @@ func compileBPF(expr string) (code string, err error) {
 	}
 	return strings.Join(codeParts, ","), nil
 
+}
+
+func setupBpfObjects() (objs *bpfObjects, err error) {
+	spec, err := loadBpf()
+	if err != nil {
+		return
+	}
+
+	ns, err := netns.Get()
+	if err != nil {
+		return
+	}
+
+	var s unix.Stat_t
+	if err = unix.Fstat(int(ns), &s); err != nil {
+		return
+	}
+
+	block := uint8(0)
+	if config.blockModification {
+		block = 1
+	}
+	consts := map[string]interface{}{
+		"CONFIG": bpfConfig{
+			netns: uint32(s.Ino),
+			block: block,
+		},
+	}
+	if err = spec.RewriteConstants(consts); err != nil {
+		return
+	}
+
+	objs = &bpfObjects{}
+	if err = spec.LoadAndAssign(objs, nil); err != nil {
+		var ve *ebpf.VerifierError
+		if errors.As(err, &ve) {
+			err = fmt.Errorf("%+v: %+v\n", err, ve)
+		}
+		return
+	}
+
+	return
 }
