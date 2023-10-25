@@ -30,7 +30,7 @@ var logRegex *regexp.Regexp
 
 func init() {
 	ruleRegex = regexp.MustCompile(`[^\s"]+|"[^"]*"`)
-	logRegex = regexp.MustCompile(`(\d+)/([^/]+)/(\w+?)IN=(\w*)`)
+	logRegex = regexp.MustCompile(`(\d+)/([^/]+)/([-\w]+?)IN=(\w*)`)
 }
 
 func iptablesSave() (iptables Iptables, err error) {
