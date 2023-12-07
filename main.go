@@ -36,7 +36,7 @@ func init() {
 
 	fmt.Println(RED + "# Warning: run \"sysctl -w net.netfilter.nf_log_all_netns=1\" to enable iptables logging for containers" + NC)
 
-	flag.StringVarP(&config.bin, "bin", "b", "iptables", "iptables binary name; e.g. specify `ip6tables` for IPv6 tracing, or `iptables-lagecy` for legacy variant")
+	flag.StringVarP(&config.bin, "bin", "b", "iptables-nft", "iptables binary name; e.g. specify `ip6tables` for IPv6 tracing, or `iptables-lagecy` for legacy variant")
 	flag.BoolVarP(&config.rawOutput, "raw", "r", false, "output raw syslog lines")
 	flag.BoolVarP(&config.warnModification, "warn-modification", "w", false, "warn if iptables is modified")
 	flag.BoolVarP(&config.blockModification, "block-modification", "B", false, "block iptables modification")

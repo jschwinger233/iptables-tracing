@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -48,14 +48,8 @@ func iptablesSave() (iptables Iptables, err error) {
 }
 
 func iptablesRestore(iptables Iptables) (err error) {
-	cmd := exec.Command(config.bin + "-restore")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return
-	}
-
-	io.WriteString(stdin, iptables.Save())
-	stdin.Close()
+	os.WriteFile("/tmp/iptables-save", []byte(iptables.Save()), 0644)
+	cmd := exec.Command(config.bin+"-restore", "/tmp/iptables-save")
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
